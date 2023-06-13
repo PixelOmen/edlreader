@@ -1,1 +1,1 @@
-from .main import EDLReader, EDLEvent
+from .main import EDLReader, EDLEvent, Metadata
