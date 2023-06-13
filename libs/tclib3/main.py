@@ -1,4 +1,3 @@
-from audioop import mul
 from . import helpers
 
 def frames_to_tc(totalframes: int, fps: float=24, dropframe: bool=False):
