@@ -1,8 +1,8 @@
 from pathlib import Path
-from dataclasses import dataclass
 from copy import deepcopy
+from dataclasses import dataclass
 
-from libs import tclib3
+from .libs import tclib3
 
 @dataclass
 class EDLEvent:
