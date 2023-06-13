@@ -24,6 +24,12 @@ class EDLEvent:
         partthree = f"{self.source_in} {self.source_out} {self.record_in} {self.record_out}"
         return partone + parttwo + partthree
 
+    def getclipname(self) -> str:
+        if len(self.notes) > 0 and self.notes[0].startswith("* FROM CLIP NAME: "):
+            return self.notes[0].split("* FROM CLIP NAME: ")[1]
+        else:
+            return ""
+
 
 @dataclass
 class EDLMarker:
