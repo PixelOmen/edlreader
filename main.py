@@ -4,6 +4,19 @@ from dataclasses import dataclass
 
 from .libs import tclib3
 
+
+@dataclass
+class EDLMarker:
+    color: str
+    name: str
+    duration: str
+
+    def __post_init__(self):
+        self.color = self.color[2:].strip()
+        self.name = self.name[2:].strip()
+        self.duration = self.duration[2:].strip()
+
+
 @dataclass
 class EDLEvent:
     event_number: int
@@ -17,7 +30,6 @@ class EDLEvent:
     marker: "EDLMarker"
     notes: list[str]
 
-
     def __str__(self) -> str:
         partone = f"{self.event_number}  {self.reel_name}     {self.channel}"
         parttwo = f"     {self.transition}        "
@@ -25,22 +37,11 @@ class EDLEvent:
         return partone + parttwo + partthree
 
     def getclipname(self) -> str:
-        if len(self.notes) > 0 and self.notes[0].startswith("* FROM CLIP NAME: "):
-            return self.notes[0].split("* FROM CLIP NAME: ")[1]
-        else:
-            return ""
+        for note in self.notes:
+            if note.startswith("* FROM CLIP NAME: "):
+                return note.split("* FROM CLIP NAME: ")[1]
+        return ""
 
-
-@dataclass
-class EDLMarker:
-    color: str
-    name: str
-    duration: str
-
-    def __post_init__(self):
-        self.color = self.color[2:].strip()
-        self.name = self.name[2:].strip()
-        self.duration = self.duration[2:].strip()
 
 @dataclass
 class Metadata:
@@ -57,7 +58,7 @@ class Metadata:
         "ResolveColorGreen" : "nexton",
         "ResolveColorYellow" : "livingcreds",
         "ResolveColorRed" : "endcreds",
-        "ResolveColorPink" : "textless",
+        "ResolveColorPink" : "textless"
     }
 
     def set(self, edlreader: "EDLReader") -> None:
@@ -84,31 +85,33 @@ class Metadata:
 
 
 class EDLReader:
-    def __init__(self, edl_path: Path, fps: float, resolvemarkers: bool=False, df: bool=False) -> None:
+    def __init__(self, edl_path: Path, fps: float | None = None, resolvemarkers: bool = False, df: bool = False) -> None:
         self.edl_path = edl_path
-        self.fps = fps
         self.df = df
         self.resolvemarkers = resolvemarkers
         self.edl_lines = self._read()
+
         self.header: list[str] = []
         self.original_events: list[EDLEvent] = []
-        self._parse()
+        self._parse_header_and_events()
+
         self.current_events: list[EDLEvent] = deepcopy(self.original_events)
+        self._fps: float | None = fps
+        self._isoffset: bool = False
 
-    def write(self, path: str | Path) -> None:
-        with open(path, "w") as fp:
-            for line in self.header:
-                fp.write(f"{line}\n")
-            fp.write("\n")
-            for event in self.current_events:
-                fp.write(f"{str(event)}\n")
-                for note in event.notes:
-                    fp.write(f"{note}\n")
-                fp.write("\n")
+    @property
+    def fps(self) -> float:
+        if self._fps is None:
+            raise AttributeError("FPS not set. Set it on construction or with set_fps()")
+        return self._fps
+    
+    def set_fps(self, fps: float) -> None:
+        self._fps = fps
+        self.reset()
             
-
     def reset(self) -> None:
         self.current_events: list[EDLEvent] = deepcopy(self.original_events)
+        self._isoffset = False
 
     def timecodes(self, src_tc: bool=False) -> list[str]:
         tc = []
@@ -120,7 +123,6 @@ class EDLReader:
                 tc.append(event.record_in)
                 tc.append(event.record_out)
         return tc
-
 
     def offset_forward(self, offset: str, frames: bool=False, offset_src: bool=False) -> None:
         """
@@ -140,6 +142,8 @@ class EDLReader:
             event.record_in = self._offset(event.record_in, offset_frames)
             event.record_out = self._offset(event.record_out, offset_frames)
 
+        self._isoffset = True
+
     def offset_backward(self, offset: str, frames: bool=False, offsetsrc_tc: bool=False) -> None:
         if frames:
             offset_frames = int(offset)
@@ -151,7 +155,20 @@ class EDLReader:
                 event.source_in = self._offset(event.source_in, offset_frames, True)
                 event.source_out = self._offset(event.source_out, offset_frames, True)
             event.record_in = self._offset(event.record_in, offset_frames, True)
-            event.record_out = self._offset(event.record_out, offset_frames, True)            
+            event.record_out = self._offset(event.record_out, offset_frames, True)
+
+        self._isoffset = True
+
+    def write(self, path: str | Path) -> None:
+        with open(path, "w") as fp:
+            for line in self.header:
+                fp.write(f"{line}\n")
+            fp.write("\n")
+            for event in self.current_events:
+                fp.write(f"{str(event)}\n")
+                for note in event.notes:
+                    fp.write(f"{note}\n")
+                fp.write("\n")
 
     def _offset(self, tc: str, offset: int, subtract: bool=False) -> str:
         frames = tclib3.tc_to_frames(tc, self.fps)
@@ -168,7 +185,7 @@ class EDLReader:
         stripped_lines = [l.strip("\n") for l in edl_lines if l != "\n"]
         return stripped_lines
 
-    def _parse(self) -> None:
+    def _parse_header_and_events(self) -> None:
         events = []
         comment_lines = []
         current_event = []
@@ -192,9 +209,12 @@ class EDLReader:
                 is_header = False
             elif is_header:
                 header.append(line)
+
         if current_event and comment_lines:
             current_event.append(comment_lines)
         if current_event:
+            if len(current_event) == 1:
+                current_event.append([])
             events.append(current_event)
 
         edl_events = []
@@ -205,8 +225,11 @@ class EDLReader:
                 edlevent = EDLEvent(*event[0], marker=marker, notes=event[1])
                 edl_events.append(edlevent)
             else:
-                edlevent = EDLEvent(*event[0], marker=EDLMarker("","",""), notes=event[1])
-                edl_events.append(edlevent)
+                try:
+                    edlevent = EDLEvent(*event[0], marker=EDLMarker("","",""), notes=event[1])
+                    edl_events.append(edlevent)
+                except:
+                    pass
 
         self.original_events = edl_events
         self.header = header
