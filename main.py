@@ -113,7 +113,16 @@ class EDLReader:
         self.current_events: list[EDLEvent] = deepcopy(self.original_events)
         self._isoffset = False
 
-    def timecodes(self, src_tc: bool=False) -> list[str]:
+    def timecodes(self, src_tc: bool = False) -> list[tuple[str, str]]:
+        tc = []
+        for event in self.current_events:
+            if src_tc:
+                tc.append((event.source_in, event.source_out))
+            else:
+                tc.append((event.record_in, event.record_out))
+        return tc
+
+    def timecodes_as_str(self, delim: str = ",", src_tc: bool=False) -> str:
         tc = []
         for event in self.current_events:
             if src_tc:
@@ -122,7 +131,7 @@ class EDLReader:
             else:
                 tc.append(event.record_in)
                 tc.append(event.record_out)
-        return tc
+        return delim.join(tc)
 
     def offset_forward(self, offset: str, frames: bool=False, offset_src: bool=False) -> None:
         """
