@@ -194,51 +194,58 @@ class EDLReader:
         stripped_lines = [l.strip("\n") for l in edl_lines if l != "\n"]
         return stripped_lines
 
+    def _remove_marker_from_comment(self, comment: list[str]) -> list[str]:
+        new_comment = []
+        for line in comment:
+            if "|" in line:
+                new_comment.append(line.split("|")[0].strip())
+            else:
+                new_comment.append(line)
+        return new_comment
+
     def _parse_header_and_events(self) -> None:
         events = []
+        event_info = []
         comment_lines = []
-        current_event = []
+        current_event = () # index 1 is event info, index 2 is comment lines
         is_event = False
         is_header = True
         header = []
         for line in self.edl_lines:
             if is_event and line[0].isdigit():
-                current_event.append(comment_lines)
+                current_event = (event_info, comment_lines)
                 events.append(current_event)
+                event_info = []
                 comment_lines = []
-                current_event = []
+                current_event = ()
                 is_event = False
             if is_event:
                 comment_lines.append(line)
+                continue
             if line[0].isdigit():
                 split_line = line.split(" ")
                 split_line = [section for section in split_line if section]
-                current_event.append(split_line)
+                event_info = split_line
                 is_event = True
                 is_header = False
             elif is_header:
                 header.append(line)
 
-        if current_event and comment_lines:
-            current_event.append(comment_lines)
+        if event_info and comment_lines:
+            current_event = (event_info, comment_lines)
         if current_event:
-            if len(current_event) == 1:
-                current_event.append([])
             events.append(current_event)
 
         edl_events = []
         for event in events:
             if self.resolvemarkers:
-                markerstr = event[1][0].split("|")[1:]
+                markerstr = "\n".join(event[1]).split("|")[1:]
                 marker = EDLMarker(*markerstr)
-                edlevent = EDLEvent(*event[0], marker=marker, notes=event[1])
+                edlevent = EDLEvent(*event[0], marker=marker, notes=self._remove_marker_from_comment(event[1]))
                 edl_events.append(edlevent)
             else:
-                try:
-                    edlevent = EDLEvent(*event[0], marker=EDLMarker("","",""), notes=event[1])
-                    edl_events.append(edlevent)
-                except:
-                    pass
+                edlevent = EDLEvent(*event[0], marker=EDLMarker("","",""), notes=event[1])
+                edl_events.append(edlevent)
 
         self.original_events = edl_events
         self.header = header
